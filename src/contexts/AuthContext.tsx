@@ -1,91 +1,175 @@
-import React, { createContext, useContext, useEffect, useState } from 'react'
-import { supabase, AuthSession, Perfil, PapelUsuario } from '@/lib/supabase'
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react'
+import type { Session, User } from '@supabase/supabase-js'
+import { supabase } from '@/lib/supabase/client'
+import { DEMO_USERS, DEMO_PASSWORD } from '@/lib/supabase'
+import type { Perfil, PapelUsuario } from '@/types/crm'
 
-interface AuthContextType {
-  session: AuthSession | null
+export interface AuthContextType {
+  session: Session | null
+  user: User | null
   perfil: Perfil | null
   loading: boolean
   signIn: (email: string, pass: string) => Promise<{ error: Error | null }>
   signOut: () => Promise<void>
   resetPassword: (email: string) => Promise<{ error: Error | null }>
-  switchDemoRole?: (papel: PapelUsuario) => void
+  switchDemoRole?: (papel: PapelUsuario) => Promise<{ error: Error | null }>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
+// Função utilitária para buscar o perfil na tabela perfis pelo ID
+async function fetchPerfil(userId: string, emailFallback?: string): Promise<Perfil | null> {
+  try {
+    const { data, error } = await supabase.from('perfis').select('*').eq('id', userId).maybeSingle()
+
+    if (error) {
+      console.warn('Erro ao carregar perfil do usuário:', error)
+      return null
+    }
+
+    if (data) {
+      return data as Perfil
+    }
+
+    // Fallback se não existir perfil criado para esse ID
+    return {
+      id: userId,
+      nome: emailFallback?.split('@')[0] || 'Usuário',
+      email: emailFallback || '',
+      papel: 'vendedor',
+      ativo: true,
+    }
+  } catch (e) {
+    console.error('Falha de rede ao buscar perfil:', e)
+    return null
+  }
+}
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [session, setSession] = useState<AuthSession | null>(null)
+  const [session, setSession] = useState<Session | null>(null)
+  const [user, setUser] = useState<User | null>(null)
+  const [perfil, setPerfil] = useState<Perfil | null>(null)
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    // 1. Inicializa com a sessão guardada
-    const current = supabase.getStoredSession()
-    setSession(current)
-    setLoading(false)
+  // Atualizar perfil sempre que o usuário mudar
+  const refreshPerfil = useCallback(async (currentUser: User | null) => {
+    if (!currentUser) {
+      setPerfil(null)
+      return
+    }
+    const p = await fetchPerfil(currentUser.id, currentUser.email)
+    setPerfil(p)
+  }, [])
 
-    // 2. Escuta mudanças
-    const sub = supabase.onAuthStateChange((newSession) => {
-      setSession(newSession)
-      setLoading(false)
+  useEffect(() => {
+    // 1. Ouvinte oficial do Supabase Auth (sem async/await dentro do callback síncrono)
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, currentSession) => {
+      setSession(currentSession)
+      setUser(currentSession?.user ?? null)
+      if (currentSession?.user) {
+        // Carrega o perfil de forma assíncrona desacoplada
+        fetchPerfil(currentSession.user.id, currentSession.user.email).then((p) => {
+          setPerfil(p)
+          setLoading(false)
+        })
+      } else {
+        setPerfil(null)
+        setLoading(false)
+      }
+    })
+
+    // 2. Busca inicial síncrona/imediata da sessão persistida
+    supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
+      setSession(initialSession)
+      setUser(initialSession?.user ?? null)
+      if (initialSession?.user) {
+        fetchPerfil(initialSession.user.id, initialSession.user.email).then((p) => {
+          setPerfil(p)
+          setLoading(false)
+        })
+      } else {
+        setLoading(false)
+      }
     })
 
     return () => {
-      sub.unsubscribe()
+      subscription.unsubscribe()
     }
   }, [])
 
   const signIn = async (email: string, pass: string) => {
     setLoading(true)
-    const { data, error } = await supabase.signInWithPassword(email, pass)
-    setLoading(false)
-    if (data?.session) {
-      setSession(data.session)
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: email.trim().toLowerCase(),
+      password: pass,
+    })
+
+    if (error) {
+      setLoading(false)
+      return { error: new Error(error.message) }
     }
-    return { error }
+
+    if (data.session) {
+      setSession(data.session)
+      setUser(data.user)
+      const p = await fetchPerfil(data.user.id, data.user.email)
+      setPerfil(p)
+    }
+    setLoading(false)
+    return { error: null }
   }
 
   const signOut = async () => {
-    await supabase.signOut()
+    setLoading(true)
+    await supabase.auth.signOut()
     setSession(null)
+    setUser(null)
+    setPerfil(null)
+    setLoading(false)
   }
 
   const resetPassword = async (email: string) => {
-    return await supabase.resetPasswordForEmail(email)
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
+      redirectTo: `${window.location.origin}/`,
+    })
+    return { error: error ? new Error(error.message) : null }
   }
 
-  const switchDemoRole = (papel: PapelUsuario) => {
-    const defaultNames: Record<PapelUsuario, string> = {
-      vendedor: 'Carlos Eduardo (Vendedor)',
-      supervisora: 'Renata Silveira (Supervisora)',
-      diretoria: 'Marcos Platina (Diretoria)',
-      pcp: 'Julio Cesar (PCP Engenharia)',
-      admin: 'Administrador do Sistema',
+  // Seletor de homologação realiza login REAL com a conta demo correspondente
+  const switchDemoRole = async (papel: PapelUsuario) => {
+    const demo = DEMO_USERS[papel]
+    if (!demo) return { error: new Error('Papel de demonstração não encontrado') }
+
+    setLoading(true)
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: demo.email,
+      password: DEMO_PASSWORD,
+    })
+
+    if (error) {
+      console.error(`Erro ao logar na conta demo ${demo.email}:`, error)
+      setLoading(false)
+      return { error: new Error(error.message) }
     }
 
-    const newSession: AuthSession = {
-      user: {
-        id: 'usr_demo_' + papel,
-        email: `${papel}@slyparts.com.br`,
-        user_metadata: { nome: defaultNames[papel], papel },
-      },
-      perfil: {
-        id: 'usr_demo_' + papel,
-        nome: defaultNames[papel],
-        email: `${papel}@slyparts.com.br`,
-        papel,
-        codigo_vendedor_focco: papel === 'vendedor' ? 'VEND-042' : undefined,
-        ativo: true,
-      },
+    if (data.session) {
+      setSession(data.session)
+      setUser(data.user)
+      const p = await fetchPerfil(data.user.id, data.user.email)
+      setPerfil(p)
     }
-    supabase.setSession(newSession)
-    setSession(newSession)
+    setLoading(false)
+    return { error: null }
   }
 
   return (
     <AuthContext.Provider
       value={{
         session,
-        perfil: session?.perfil || null,
+        user,
+        perfil,
         loading,
         signIn,
         signOut,

@@ -67,6 +67,13 @@ export default function SupervisaoPage() {
       if (vends.length > 0 && !vendedorSelecionado) {
         setVendedorSelecionado(vends[0])
       }
+    } catch (err) {
+      console.error('Erro ao carregar Supervisão:', err)
+      toast({
+        title: 'Erro de permissão ou conexão',
+        description: 'Não foi possível carregar os dados completos da supervisão.',
+        variant: 'destructive',
+      })
     } finally {
       setLoading(false)
     }
@@ -74,7 +81,7 @@ export default function SupervisaoPage() {
 
   useEffect(() => {
     carregarDados()
-  }, [])
+  }, [perfil?.id])
 
   // ===========================================================================
   // 4 KPIS DA EQUIPE HOJE

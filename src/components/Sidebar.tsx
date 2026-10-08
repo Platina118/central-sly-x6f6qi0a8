@@ -235,7 +235,12 @@ export const Sidebar: React.FC<{
               (r) => (
                 <button
                   key={r}
-                  onClick={() => switchDemoRole(r)}
+                  onClick={async () => {
+                    const res = await switchDemoRole(r)
+                    if (res?.error) {
+                      console.error('Erro ao alternar papel:', res.error)
+                    }
+                  }}
                   className={`text-[10px] py-0.5 px-1 rounded font-figtree transition-all ${
                     papel === r
                       ? 'bg-[#ED1C24] text-white font-bold'

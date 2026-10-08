@@ -28,10 +28,11 @@ import { Cliente, Perfil, SituacaoComercial } from '@/types/crm'
 
 export default function CarteiraPage() {
   const navigate = useNavigate()
-  const { perfil } = useAuth()
+  const { perfil, session } = useAuth()
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [vendedores, setVendedores] = useState<Perfil[]>([])
   const [loading, setLoading] = useState(true)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
   // Filtros
   const [filtroSituacao, setFiltroSituacao] = useState<SituacaoComercial | 'todos'>('todos')
@@ -53,16 +54,26 @@ export default function CarteiraPage() {
   useEffect(() => {
     async function carregar() {
       setLoading(true)
+      setErrorMessage(null)
       try {
+        if (!session) {
+          setErrorMessage('Sessão expirada ou não autenticada. Faça login novamente.')
+          setLoading(false)
+          return
+        }
+
         const [listaClientes, listaVendedores] = await Promise.all([getClientes(), getVendedores()])
         setClientes(listaClientes)
         setVendedores(listaVendedores)
+      } catch (err) {
+        console.error('Erro ao carregar Carteira:', err)
+        setErrorMessage('Erro ao carregar a carteira. Verifique suas permissões.')
       } finally {
         setLoading(false)
       }
     }
     carregar()
-  }, [])
+  }, [session?.user?.id])
 
   // Contagem por situação para as pills de resumo
   const contagens = useMemo(() => {
@@ -258,6 +269,13 @@ export default function CarteiraPage() {
   return (
     <RoleGuard allowedRoles={['vendedor', 'supervisora', 'diretoria']}>
       <div className="space-y-6 pb-20 md:pb-8 animate-fade-in">
+        {/* MENSAGEM DE ERRO VISÍVEL SE SESSÃO FOR INVÁLIDA */}
+        {errorMessage && (
+          <div className="bg-[#ED1C24]/10 border border-[#ED1C24]/30 text-[#ED1C24] p-4 rounded-[10px] text-xs font-figtree flex items-center justify-between">
+            <span>{errorMessage}</span>
+          </div>
+        )}
+
         {/* Topo da Página */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-[#D9D9D9]/70 pb-4">
           <div>

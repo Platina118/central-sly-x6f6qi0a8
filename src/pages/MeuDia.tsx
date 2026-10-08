@@ -18,12 +18,15 @@ import { ModalRegistrarResultado } from '@/components/ModalRegistrarResultado'
 import { ModalNovaAcao } from '@/components/ModalNovaAcao'
 import { getAcoes, getClientes, formatCurrency } from '@/services/crm'
 import { Acao, Cliente } from '@/types/crm'
+import { useToast } from '@/hooks/use-toast'
 
 export default function MeuDiaPage() {
-  const { perfil } = useAuth()
+  const { perfil, session } = useAuth()
+  const { toast } = useToast()
   const [acoes, setAcoes] = useState<Acao[]>([])
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [loading, setLoading] = useState(true)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [modalResultadoAcao, setModalResultadoAcao] = useState<Acao | null>(null)
   const [modalNovaAcaoOpen, setModalNovaAcaoOpen] = useState(false)
   const [exitingAcaoId, setExitingAcaoId] = useState<string | null>(null)
@@ -33,13 +36,28 @@ export default function MeuDiaPage() {
 
   const loadData = async () => {
     setLoading(true)
+    setErrorMessage(null)
     try {
+      if (!session) {
+        setErrorMessage('Sessão expirada ou não autenticada. Faça login novamente.')
+        setLoading(false)
+        return
+      }
+
       const [acoesData, clientesData] = await Promise.all([
         getAcoes({ vendedorId }),
         getClientes({ vendedorId }),
       ])
       setAcoes(acoesData)
       setClientes(clientesData)
+    } catch (err: any) {
+      console.error('Erro ao carregar Meu Dia:', err)
+      setErrorMessage('Erro ao carregar dados do dia. Verifique sua conexão e permissões.')
+      toast({
+        title: 'Erro de carregamento',
+        description: 'Não foi possível carregar os dados de Meu Dia.',
+        variant: 'destructive',
+      })
     } finally {
       setLoading(false)
     }
@@ -47,7 +65,7 @@ export default function MeuDiaPage() {
 
   useEffect(() => {
     loadData()
-  }, [vendedorId])
+  }, [vendedorId, session?.user?.id])
 
   // Data de hoje por extenso
   const dataHojeExtenso = useMemo(() => {
@@ -222,6 +240,19 @@ export default function MeuDiaPage() {
             />
           </div>
         </div>
+
+        {/* MENSAGEM DE ERRO VISÍVEL SE HOUVER PROBLEMA DE SESSÃO / RLS */}
+        {errorMessage && (
+          <div className="bg-[#ED1C24]/10 border border-[#ED1C24]/30 text-[#ED1C24] p-4 rounded-[10px] text-xs font-figtree flex items-center justify-between">
+            <span>{errorMessage}</span>
+            <button
+              onClick={loadData}
+              className="px-3 py-1 bg-[#ED1C24] text-white font-bold rounded-[6px] hover:bg-[#C8141B] transition-colors"
+            >
+              Tentar novamente
+            </button>
+          </div>
+        )}
 
         {/* LOADING SKELETON */}
         {loading && (

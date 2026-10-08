@@ -2,21 +2,21 @@ import React, { useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { Eye, EyeOff, Loader2, AlertCircle, CheckCircle2, ArrowLeft, Shield } from 'lucide-react'
 import { useAuth, getRoleHomePath } from '@/contexts/AuthContext'
-import { DEMO_USERS, PapelUsuario } from '@/lib/supabase'
+import { DEMO_USERS, DEMO_PASSWORD, PapelUsuario } from '@/lib/supabase'
 
 export default function Index() {
-  const { session, signIn, resetPassword, switchDemoRole } = useAuth()
+  const { session, perfil, signIn, resetPassword, switchDemoRole } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
 
-  // Se já estiver logado, redireciona para a home do papel
+  // Se já estiver logado e com perfil carregado, redireciona para a home do papel
   React.useEffect(() => {
-    if (session?.perfil) {
+    if (session && perfil) {
       const from = (location.state as any)?.from?.pathname
-      const target = from && from !== '/' ? from : getRoleHomePath(session.perfil.papel)
+      const target = from && from !== '/' ? from : getRoleHomePath(perfil.papel)
       navigate(target, { replace: true })
     }
-  }, [session, navigate, location])
+  }, [session, perfil, navigate, location])
 
   // Estados do formulário
   const [email, setEmail] = useState('')
@@ -73,11 +73,21 @@ export default function Index() {
   }
 
   // Preenchimento de credenciais demonstrativas para teste imediato
-  const handleSelectDemo = (papel: PapelUsuario) => {
+  const handleSelectDemo = async (papel: PapelUsuario) => {
     const user = DEMO_USERS[papel]
     setEmail(user.email)
-    setPassword('slyparts123')
+    setPassword(DEMO_PASSWORD)
     setErrorMessage(null)
+
+    // Opcional: efetuar login imediato via switchDemoRole
+    if (switchDemoRole) {
+      setLoading(true)
+      const { error } = await switchDemoRole(papel)
+      setLoading(false)
+      if (error) {
+        setErrorMessage(error.message)
+      }
+    }
   }
 
   return (
@@ -263,9 +273,12 @@ export default function Index() {
                     Acesso Rápido de Homologação
                   </span>
                 </div>
-                <p className="text-[11px] font-figtree text-[#707980] mb-3">
-                  Clique para preencher as credenciais de teste por papel:
-                </p>
+                <div className="flex items-center justify-between text-[11px] font-figtree text-[#707980] mb-3">
+                  <span>Clique no papel para entrar diretamente:</span>
+                  <span className="font-mono bg-[#EAEAEA] px-1.5 py-0.5 rounded text-[10px] text-[#111213]">
+                    Senha demo: {DEMO_PASSWORD}
+                  </span>
+                </div>
                 <div className="grid grid-cols-2 gap-1.5 text-xs font-figtree">
                   <button
                     type="button"
