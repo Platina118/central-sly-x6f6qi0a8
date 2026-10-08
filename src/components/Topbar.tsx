@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Search,
   Bell,
@@ -8,6 +9,8 @@ import {
   Building,
   CheckCircle2,
   X,
+  AlertTriangle,
+  ArrowRight,
 } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import {
@@ -16,6 +19,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { getClientes, getAlertas, marcarAlertaResolvido } from '@/services/crm'
+import { Cliente, Alerta } from '@/types/crm'
+import { useAuth } from '@/contexts/AuthContext'
 
 interface TopbarProps {
   title: string
@@ -23,8 +29,34 @@ interface TopbarProps {
 }
 
 export const Topbar: React.FC<TopbarProps> = ({ title, subtitle }) => {
+  const navigate = useNavigate()
+  const { perfil } = useAuth()
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  const [clientes, setClientes] = useState<Cliente[]>([])
+  const [alertas, setAlertas] = useState<Alerta[]>([])
+
+  // Carregar clientes e alertas
+  useEffect(() => {
+    let mounted = true
+    async function load() {
+      try {
+        const [clis, alts] = await Promise.all([getClientes(), getAlertas()])
+        if (mounted) {
+          setClientes(clis)
+          setAlertas(alts)
+        }
+      } catch (e) {
+        console.warn('Erro ao carregar alertas na topbar', e)
+      }
+    }
+    load()
+    return () => {
+      mounted = false
+    }
+  }, [perfil?.id])
+
+  const alertasAbertos = alertas.filter((a) => a.situacao === 'aberto')
 
   // Ouvir atalho Ctrl+K / Cmd+K
   useEffect(() => {
@@ -90,32 +122,73 @@ export const Topbar: React.FC<TopbarProps> = ({ title, subtitle }) => {
               >
                 <Bell className="w-5 h-5" strokeWidth={1.75} />
                 {/* Contador em pill vermelho */}
-                <span className="absolute top-1 right-1 flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-[#ED1C24] text-[10px] font-bold text-white leading-none">
-                  0
-                </span>
+                {alertasAbertos.length > 0 && (
+                  <span className="absolute top-1 right-1 flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-[#ED1C24] text-[10px] font-bold text-white leading-none animate-pulse">
+                    {alertasAbertos.length}
+                  </span>
+                )}
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent
               align="end"
-              className="w-80 p-0 border border-[#D9D9D9] rounded-[10px] shadow-lg animate-slide-down bg-white"
+              className="w-80 sm:w-96 p-0 border border-[#D9D9D9] rounded-[10px] shadow-lg animate-slide-down bg-white z-50 max-h-[80vh] overflow-y-auto"
             >
-              <div className="p-3 border-b border-[#D9D9D9] flex items-center justify-between">
+              <div className="p-3 border-b border-[#D9D9D9] flex items-center justify-between bg-[#F6F6F6]/60 sticky top-0 bg-white">
                 <span className="font-figtree font-bold text-xs uppercase tracking-wider text-[#707980]">
-                  Alertas Sly Parts
+                  Alertas Operacionais
                 </span>
-                <span className="text-[11px] text-[#707980] font-figtree">0 não lidos</span>
+                <span className="text-[11px] text-[#ED1C24] font-figtree font-bold">
+                  {alertasAbertos.length} pendentes
+                </span>
               </div>
-              <div className="py-8 px-4 flex flex-col items-center justify-center text-center">
-                <div className="w-10 h-10 rounded-full bg-[#F6F6F6] flex items-center justify-center text-[#707980] mb-2">
-                  <Bell className="w-5 h-5 text-[#707980]" strokeWidth={1.75} />
+
+              {alertasAbertos.length === 0 ? (
+                <div className="py-8 px-4 flex flex-col items-center justify-center text-center">
+                  <div className="w-10 h-10 rounded-full bg-[#F6F6F6] flex items-center justify-center text-[#707980] mb-2">
+                    <CheckCircle2 className="w-5 h-5 text-[#1E9E5A]" strokeWidth={1.75} />
+                  </div>
+                  <p className="font-montserrat text-xs font-bold text-[#111213]">
+                    Nenhum alerta pendente
+                  </p>
+                  <p className="font-figtree text-[11px] text-[#707980] mt-0.5">
+                    Notificações de quedas, cotações e metas concluídas.
+                  </p>
                 </div>
-                <p className="font-montserrat text-xs font-bold text-[#111213]">
-                  Nenhum alerta no momento
-                </p>
-                <p className="font-figtree text-[11px] text-[#707980] mt-0.5">
-                  Notificações de pedidos, lotes e metas surgirão aqui.
-                </p>
-              </div>
+              ) : (
+                <div className="divide-y divide-[#D9D9D9]">
+                  {alertasAbertos.map((alt) => (
+                    <div
+                      key={alt.id}
+                      className="p-3 hover:bg-[#F6F6F6] transition-colors text-xs font-figtree space-y-1"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-[#111213]">
+                          {alt.referencia || 'Alerta'}
+                        </span>
+                        <span className="text-[10px] uppercase font-bold text-[#ED1C24] bg-[#ED1C24]/10 px-1.5 py-0.2 rounded">
+                          {alt.tipo.replace('_', ' ')}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-[#707980] leading-tight">{alt.mensagem}</p>
+                      <div className="pt-1 flex items-center justify-end">
+                        <button
+                          onClick={async () => {
+                            await marcarAlertaResolvido(alt.id)
+                            setAlertas((prev) =>
+                              prev.map((a) =>
+                                a.id === alt.id ? { ...a, situacao: 'resolvido' } : a,
+                              ),
+                            )
+                          }}
+                          className="text-[10px] text-[#1E9E5A] hover:underline font-bold"
+                        >
+                          Marcar como lido
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -149,28 +222,76 @@ export const Topbar: React.FC<TopbarProps> = ({ title, subtitle }) => {
             )}
           </div>
 
-          {/* Conteúdo / Estado Vazio Elegante */}
-          <div className="p-8 text-center min-h-[220px] flex flex-col items-center justify-center">
-            <div className="w-12 h-12 rounded-full bg-[#F6F6F6] flex items-center justify-center text-[#707980] mb-3">
-              <Building className="w-6 h-6 text-[#707980]" strokeWidth={1.75} />
+          {/* Resultados de Busca ou Estado Vazio */}
+          {searchQuery.trim() ? (
+            <div className="max-h-[360px] overflow-y-auto divide-y divide-[#D9D9D9] p-2">
+              {clientes
+                .filter((c) => {
+                  const q = searchQuery.toLowerCase()
+                  return (
+                    c.nome_fantasia.toLowerCase().includes(q) ||
+                    c.razao_social.toLowerCase().includes(q) ||
+                    c.codigo_focco.toLowerCase().includes(q) ||
+                    c.cidade.toLowerCase().includes(q) ||
+                    c.cnpj.includes(q)
+                  )
+                })
+                .slice(0, 8)
+                .map((c) => (
+                  <div
+                    key={c.id}
+                    onClick={() => {
+                      setSearchOpen(false)
+                      setSearchQuery('')
+                      navigate(`/clientes/${c.id}`)
+                    }}
+                    className="p-3 hover:bg-[#F6F6F6] rounded-[8px] cursor-pointer flex items-center justify-between transition-colors group"
+                  >
+                    <div>
+                      <div className="font-montserrat text-xs font-bold text-[#111213] group-hover:text-[#ED1C24] transition-colors">
+                        {c.nome_fantasia}
+                      </div>
+                      <div className="font-figtree text-[11px] text-[#707980]">
+                        {c.codigo_focco} • {c.cidade}/{c.uf} • CNPJ: {c.cnpj}
+                      </div>
+                    </div>
+                    <ArrowRight className="w-4 h-4 text-[#707980] group-hover:text-[#ED1C24] transition-colors" />
+                  </div>
+                ))}
             </div>
-            <p className="font-montserrat text-sm font-bold text-[#111213]">
-              {searchQuery ? 'Nenhum cliente encontrado' : 'Busca rápida de distribuidores'}
-            </p>
-            <p className="font-figtree text-xs text-[#707980] max-w-xs mt-1">
-              {searchQuery
-                ? `Nenhum distribuidor ou cliente corresponde a "${searchQuery}".`
-                : 'Digite o nome do distribuidor, cidade ou CNPJ para localizar fichas e pedidos.'}
-            </p>
-            <div className="mt-4 flex flex-wrap gap-2 justify-center">
-              <span className="text-[11px] font-figtree text-[#707980] px-2 py-0.5 rounded bg-[#F6F6F6] border border-[#D9D9D9]">
-                Ex: Distribuidora Platina
-              </span>
-              <span className="text-[11px] font-figtree text-[#707980] px-2 py-0.5 rounded bg-[#F6F6F6] border border-[#D9D9D9]">
-                Ex: Auto Peças Brasil
-              </span>
+          ) : (
+            <div className="p-8 text-center min-h-[200px] flex flex-col items-center justify-center">
+              <div className="w-12 h-12 rounded-full bg-[#F6F6F6] flex items-center justify-center text-[#707980] mb-3">
+                <Building className="w-6 h-6 text-[#707980]" strokeWidth={1.75} />
+              </div>
+              <p className="font-montserrat text-sm font-bold text-[#111213]">
+                Busca rápida de distribuidores
+              </p>
+              <p className="font-figtree text-xs text-[#707980] max-w-xs mt-1">
+                Digite o nome do distribuidor, cidade ou CNPJ para abrir a ficha 360°.
+              </p>
+              <div className="mt-4 flex flex-wrap gap-2 justify-center">
+                <button
+                  onClick={() => setSearchQuery('Tonini')}
+                  className="text-[11px] font-figtree text-[#707980] hover:text-[#111213] px-2 py-0.5 rounded bg-[#F6F6F6] border border-[#D9D9D9]"
+                >
+                  Ex: Tonini
+                </button>
+                <button
+                  onClick={() => setSearchQuery('Serraf')}
+                  className="text-[11px] font-figtree text-[#707980] hover:text-[#111213] px-2 py-0.5 rounded bg-[#F6F6F6] border border-[#D9D9D9]"
+                >
+                  Ex: Serraf
+                </button>
+                <button
+                  onClick={() => setSearchQuery('Rede União')}
+                  className="text-[11px] font-figtree text-[#707980] hover:text-[#111213] px-2 py-0.5 rounded bg-[#F6F6F6] border border-[#D9D9D9]"
+                >
+                  Ex: Rede União
+                </button>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Rodapé da modal */}
           <div className="px-4 py-2 bg-[#F6F6F6] border-t border-[#D9D9D9] flex items-center justify-between text-[11px] font-figtree text-[#707980]">

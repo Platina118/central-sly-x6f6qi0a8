@@ -15,6 +15,7 @@ import NotFound from './pages/NotFound'
 // As 11 rotas da Central Sly
 import MeuDiaPage from './pages/MeuDia'
 import CarteiraPage from './pages/Carteira'
+import FichaClientePage from './pages/FichaCliente'
 import OportunidadesPage from './pages/Oportunidades'
 import ConversasPage from './pages/Conversas'
 import NovosClientesPage from './pages/NovosClientes'
@@ -39,6 +40,7 @@ const App = () => (
           <Route element={<Layout />}>
             <Route path="/meu-dia" element={<MeuDiaPage />} />
             <Route path="/carteira" element={<CarteiraPage />} />
+            <Route path="/clientes/:id" element={<FichaClientePage />} />
             <Route path="/oportunidades" element={<OportunidadesPage />} />
             <Route path="/conversas" element={<ConversasPage />} />
             <Route path="/novos-clientes" element={<NovosClientesPage />} />
